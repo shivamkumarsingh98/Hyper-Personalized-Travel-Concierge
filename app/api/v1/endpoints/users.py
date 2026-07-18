@@ -35,6 +35,23 @@ async def get_user_profile(user_id: UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
+@router.post("/login", response_model=UserResponse)
+async def login_user(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+    stmt = select(User).where(User.email == user_in.email)
+    res = await db.execute(stmt)
+    user = res.scalars().first()
+    if not user:
+        user = User(
+            name=user_in.name,
+            email=user_in.email,
+            loyalty_tier=user_in.loyalty_tier or "Standard",
+            preferences=user_in.preferences or {}
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    return user
+
 @router.put("/{user_id}/profile", response_model=UserResponse)
 async def update_user_profile(user_id: UUID, user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     user = await db.get(User, user_id)

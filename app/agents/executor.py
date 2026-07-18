@@ -11,7 +11,8 @@ class ExecutorAgent(BaseAgent):
         super().__init__("executor")
 
     async def execute(self, db: AsyncSession, payload: Dict[str, Any]) -> Dict[str, Any]:
-        trip_request_id = payload.get("trip_request_id")
+        trip_request_id_raw = payload.get("trip_request_id")
+        trip_request_id = uuid.UUID(trip_request_id_raw) if isinstance(trip_request_id_raw, str) else trip_request_id_raw
         selected = payload.get("selected_itinerary", {})
         
         itinerary = Itinerary(

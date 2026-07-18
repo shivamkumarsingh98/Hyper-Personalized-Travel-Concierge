@@ -18,7 +18,9 @@ async def converse(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     
     return ChatResponse(
         session_id=request.user_id,
+        trip_request_id=result["trip_request_id"],
         message=result["message"],
         itinerary=result["recommended_itinerary"],
+        all_itineraries=result["all_itineraries"],
         status=result["status"]
     )

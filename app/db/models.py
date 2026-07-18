@@ -1,10 +1,42 @@
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import String, ForeignKey, DateTime, Numeric, Enum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import String, ForeignKey, DateTime, Numeric, Enum, JSON, CHAR
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.db.base import Base
+
+class GUID(TypeDecorator):
+    """Platform-independent GUID type.
+    Uses PostgreSQL's UUID type, otherwise uses CHAR(36), storing as string.
+    """
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        else:
+            return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return value
+        else:
+            if isinstance(value, uuid.UUID):
+                return str(value)
+            return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        else:
+            if not isinstance(value, uuid.UUID):
+                return uuid.UUID(value)
+            return value
 
 class TripStatus(str, PyEnum):
     received = "received"
@@ -27,11 +59,11 @@ class PaymentStatus(str, PyEnum):
 class User(Base):
     __tablename__ = "users"
     
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     loyalty_tier: Mapped[str] = mapped_column(String, default="Standard")
-    preferences: Mapped[dict] = mapped_column(JSONB, default=dict)
+    preferences: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     trip_requests: Mapped[list["TripRequest"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -39,10 +71,10 @@ class User(Base):
 class TripRequest(Base):
     __tablename__ = "trip_requests"
     
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     raw_message: Mapped[str] = mapped_column(String, nullable=False)
-    extracted_constraints: Mapped[dict] = mapped_column(JSONB, default=dict)
+    extracted_constraints: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[TripStatus] = mapped_column(Enum(TripStatus), default=TripStatus.received)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
@@ -53,11 +85,11 @@ class TripRequest(Base):
 class Itinerary(Base):
     __tablename__ = "itineraries"
     
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    trip_request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("trip_requests.id", ondelete="CASCADE"), nullable=False)
-    flight_data: Mapped[dict] = mapped_column(JSONB, default=dict)
-    hotel_data: Mapped[dict] = mapped_column(JSONB, default=dict)
-    personalized_content: Mapped[dict] = mapped_column(JSONB, default=dict)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    trip_request_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("trip_requests.id", ondelete="CASCADE"), nullable=False)
+    flight_data: Mapped[dict] = mapped_column(JSON, default=dict)
+    hotel_data: Mapped[dict] = mapped_column(JSON, default=dict)
+    personalized_content: Mapped[dict] = mapped_column(JSON, default=dict)
     total_cost: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     
     trip_request: Mapped["TripRequest"] = relationship(back_populates="itineraries")
@@ -66,8 +98,8 @@ class Itinerary(Base):
 class Booking(Base):
     __tablename__ = "bookings"
     
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    itinerary_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("itineraries.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    itinerary_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("itineraries.id", ondelete="CASCADE"), nullable=False)
     pnr: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[BookingStatus] = mapped_column(Enum(BookingStatus), default=BookingStatus.pending)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -78,8 +110,8 @@ class Booking(Base):
 class Payment(Base):
     __tablename__ = "payments"
     
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    booking_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False)
     razorpay_order_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     razorpay_payment_id: Mapped[str | None] = mapped_column(String, nullable=True)
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
@@ -92,11 +124,11 @@ class Payment(Base):
 class AgentLog(Base):
     __tablename__ = "agent_logs"
     
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    trip_request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("trip_requests.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    trip_request_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("trip_requests.id", ondelete="CASCADE"), nullable=False)
     agent_name: Mapped[str] = mapped_column(String, nullable=False)
-    input_payload: Mapped[dict] = mapped_column(JSONB, default=dict)
-    output_payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    input_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    output_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     trip_request: Mapped["TripRequest"] = relationship(back_populates="agent_logs")
