@@ -1,0 +1,20 @@
+from pydantic import BaseModel, EmailStr
+from typing import Any, Dict, Optional
+from datetime import datetime
+from uuid import UUID
+
+class UserBase(BaseModel):
+    name: str
+    email: EmailStr
+    loyalty_tier: Optional[str] = "Standard"
+    preferences: Optional[Dict[str, Any]] = {}
+
+class UserCreate(UserBase):
+    pass
+
+class UserResponse(UserBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
